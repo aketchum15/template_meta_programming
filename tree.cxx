@@ -33,7 +33,6 @@ static_assert(sum<tree>::count == 6);
 static_assert(sum<tree>::count == 3);
 
 
-
 //Generic transform function applys the function provided to each value in the tree
 // ((int -> int), Tree) -> Tree
 template<typename T, auto F>
@@ -61,7 +60,5 @@ static_assert(std::is_same_v<tree_prime::type,Node<1, Node<4, Leaf, Leaf>, Node<
 //even better we can use lambdas
 using tree_lambda = transform<tree, [](int i ) {return i*i;}>;
 
-
-
-
-
+// :( compile error (lsp gave up)
+using diff_domain = transform<tree, [](int i) {return "c";}>;
