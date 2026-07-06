@@ -57,7 +57,7 @@ using tree_prime = transform<tree, square>;
 static_assert(std::is_same_v<tree_prime::type,Node<1, Node<4, Leaf, Leaf>, Node<9, Leaf, Leaf>>>);
 
 
-//even better we can use lambdas
+//even better we can use lambdas since C++20
 using tree_lambda = transform<tree, [](int i ) {return i*i;}>;
 
 // :( compile error (lsp gave up)

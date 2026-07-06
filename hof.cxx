@@ -50,7 +50,7 @@ struct Filter {};
 
 template<auto F, auto T, typename Next>
 struct Filter<F, List<T, Next>> {
-    using type = std::conditional_t<F(T), List<T, Next>, Next>;
+    using type = std::conditional_t<F(T), List<T, Next>, typename Filter<F, Next>::type>;
 };
 
 template<auto F> 
