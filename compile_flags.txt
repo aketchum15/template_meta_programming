@@ -1,1 +1,2 @@
--ftemplate-depth=10000
+-I./src
+-ftemplate-depth=10000 

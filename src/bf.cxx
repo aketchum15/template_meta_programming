@@ -1,5 +1,4 @@
 //brain fuck interpreter
-#include <unistd.h>
 
 // evil macro to turn a string literal into a list of chars
 // maxes out at 1024
@@ -285,19 +284,3 @@ template<char Instr, char... Rest>
 struct Eval<String<Instr, Rest...>> {
     using type = typename Step<InstrPtr<String<>, Instr, String<Rest...>>, Tape<>>::type;
 };
-
-// 33 is the first readable ascii char "!"
-using Exclamation = typename PROG("+++++++++++++++++++++++++++++++++.");
-using res = typename Eval<Exclamation>::type;
-
-
-// Hello World ! 
-// https://en.wikipedia.org/wiki/Brainfuck#Hello_World!
-using HelloWorld = typename PROG("++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.");
-
-using HelloRes = typename Eval<HelloWorld>::type;
-
-int main(void) {
-    write(1, HelloRes::value, sizeof(HelloRes::value));
-    return 0;
-}
