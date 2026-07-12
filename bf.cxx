@@ -1,9 +1,42 @@
 //brain fuck interpreter
 
 #include "hof.cxx"
-#include <type_traits>
 
 using ex = List<'.', List<'>', List<'<', Unit>>>;
+
+// evil macro to turn a string literal into a list of chars
+// maxes out at 1024
+#define SAFE_CHAR(s,i) (i < sizeof(s)-1 ? s[i] : '\0')
+#define STR4(s, n)    SAFE_CHAR(s,0+n),SAFE_CHAR(s,1+n),SAFE_CHAR(s,2+n),SAFE_CHAR(s,3+n)
+#define STR8(s, n)    STR4(s,n),STR4(s,n+4)
+#define STR16(s, n)   STR8(s,n),STR8(s,n+8)
+#define STR32(s, n)   STR16(s,n),STR16(s,n+16)
+#define STR64(s, n)   STR32(s,n),STR32(s,n+32)
+#define STR128(s, n)  STR64(s,n),STR64(s,n+64)
+#define STR256(s, n)  STR128(s,n),STR128(s,n+128)
+#define STR512(s, n)  STR256(s,n),STR256(s,n+256)
+#define STR1024(s, n) STR512(s,n),STR512(s,n+512)
+
+#define PROG(s) Program<STR1024(s, 0)>::type
+
+template<char... Prog>
+struct Program{};
+
+template <char C, char... Rest>
+struct Program<C, Rest...> {
+    using type = List<C, typename Program<Rest...>::type>;
+};
+
+template<char... Rest>
+struct Program<'\0', Rest... > {
+    using type = Unit;
+};
+
+template<>
+struct Program<'\0'> {
+    using type = Unit;
+};
+
 
 template<typename L, char Instr, typename R>
 struct InstrPtr{};
@@ -78,12 +111,14 @@ struct StepTapeLeft<Tape<Unit, Cell, TNext>> {
 template<typename InstrPtr, int Depth = 0>
 struct ScanRight{};
 
+template <typename IPrev, typename INext>
+struct ScanRight<InstrPtr<IPrev, ']',  INext>, 0> {
+    using type = typename StepPtrRight<InstrPtr<IPrev, ']', INext>>::type;
+};
+
 template <typename IPrev, typename INext, int Depth>
 struct ScanRight<InstrPtr<IPrev, ']',  INext>, Depth> {
-    using type = std::conditional_t<Depth == 0, 
-                      typename StepPtrRight<InstrPtr<IPrev, '[', INext>>::type,
-                      typename ScanRight<typename StepPtrRight<InstrPtr<IPrev, ']', INext>>::type, Depth-1>::type
-                 >;
+    using type = typename ScanRight<typename StepPtrRight<InstrPtr<IPrev, ']', INext>>::type, Depth-1>::type;
 };
 
 template <typename IPrev, typename INext, int Depth>
@@ -105,17 +140,19 @@ struct ScanRight<Unit, Depth> {
 template<typename Instrs, int Depth = 0>
 struct ScanLeft{};
 
+template <typename IPrev, typename INext>
+struct ScanLeft<InstrPtr<IPrev, '[', INext>, 0> {
+    using type = typename StepPtrRight<InstrPtr<IPrev, '[', INext>>::type;
+};
+
 template <typename IPrev, typename INext, int Depth>
 struct ScanLeft<InstrPtr<IPrev, '[', INext>, Depth> {
-    using type = std::conditional_t<Depth == 0, 
-                      typename StepPtrRight<InstrPtr<IPrev, '[', INext>>::type,
-                      typename ScanLeft<typename StepPtrLeft<InstrPtr<IPrev, '[', INext>>::type, Depth-1>::type
-                 >;
+    using type = typename ScanLeft<typename StepPtrLeft<InstrPtr<IPrev, '[', INext>>::type, Depth-1>::type;
 };
 
 template <typename IPrev, typename INext, int Depth>
 struct ScanLeft<InstrPtr<IPrev, ']', INext>, Depth> {
-    using type = typename ScanLeft<StepPtrLeft<InstrPtr<IPrev, ']', INext>>, Depth+1>::type;
+    using type = typename ScanLeft<typename StepPtrLeft<InstrPtr<IPrev, ']', INext>>::type, Depth+1>::type;
 };
 
 template <typename IPrev, char Instr, typename INext, int Depth>
@@ -127,7 +164,6 @@ template<int Depth>
 struct ScanLeft<Unit, Depth> {
     using type = Unit;
 };
-
 
 // Execute an Instruction
 template <typename Instrs, typename Tape>
@@ -142,12 +178,11 @@ struct Step<InstrPtr<IPrev, '+', INext>, Tape<TPrev, Cell, TNext>> {
     >::type;
 };
 
-
 // MINUS
 template<typename IPrev, typename INext, typename TPrev, char Cell, typename TNext>
 struct Step<InstrPtr<IPrev, '-', INext>, Tape<TPrev, Cell, TNext>> {
     using type = typename Step<
-        StepPtrRight<InstrPtr<IPrev, '-', INext>>, 
+        typename StepPtrRight<InstrPtr<IPrev, '-', INext>>::type, 
         Tape<TPrev, Cell-1, TNext>
     >::type;
 };
@@ -157,16 +192,16 @@ template<typename IPrev, typename INext, typename Tape>
 struct Step<InstrPtr<IPrev, '>', INext>, Tape> {
     using type = typename Step<
         typename StepPtrRight<InstrPtr<IPrev, '>', INext>>::type,
-        StepTapeRight<Tape>
+        typename StepTapeRight<Tape>::type
     >::type;
 };
 
 // LEFT
-template<typename IPrev, char NextInstr, typename INext, typename Tape>
-struct Step<InstrPtr<IPrev, '<', List<NextInstr, INext>>, Tape> {
+template<typename IPrev, typename INext, typename Tape>
+struct Step<InstrPtr<IPrev, '<', INext>, Tape> {
     using type = typename Step<
         typename StepPtrRight<InstrPtr<IPrev, '<', INext>>::type,
-        StepTapeLeft<Tape>
+        typename StepTapeLeft<Tape>::type
     >::type;
 };
 
@@ -185,84 +220,69 @@ struct Step<InstrPtr<IPrev, '.', INext>, Tape<TPrev, Cell, TNext>> {
 // No , for now :(
 
 // OPEN_BRACKET 
+template<typename IPrev, typename INext, typename TPrev, typename TNext>
+struct Step<InstrPtr<IPrev, '[', INext>, Tape<TPrev, 0, TNext>> {
+    using type = typename Step<
+                    typename ScanRight<
+                        typename StepPtrRight<InstrPtr<IPrev, '[', INext>>::type
+                    >::type,
+                    Tape<TPrev, 0, TNext>
+                >::type;
+};
+
 template<typename IPrev, typename INext, typename TPrev, char Cell, typename TNext>
 struct Step<InstrPtr<IPrev, '[', INext>, Tape<TPrev, Cell, TNext>> {
-    using type = std::conditional_t<Cell == 0,
-        typename Step<
-            typename ScanRight<
-                typename StepPtrRight<InstrPtr<TPrev, '[', TNext>>::type
-            >::type,
-            Tape<TPrev, Cell, TNext>
-        >::type,
-
-        typename Step<
-            typename StepPtrRight<InstrPtr<IPrev, '[', INext>>::type,
-            Tape<TPrev, Cell, TNext>
-        >::type
-    >;
+    using type = typename Step<
+                    typename StepPtrRight<InstrPtr<IPrev, '[', INext>>::type,
+                    Tape<TPrev, Cell, TNext>
+                >::type;
 };
+
 
 // CLOSE_BRACKET
+template<typename IPrev, typename INext, typename TPrev, typename TNext>
+struct Step<InstrPtr<IPrev, ']', INext>, Tape<TPrev, 0, TNext>> {
+    using type = typename Step<
+                    typename StepPtrRight<InstrPtr<IPrev, ']', INext>>::type,
+                    Tape<TPrev, 0, TNext>
+                >::type;
+};
+
 template<typename IPrev, typename INext, typename TPrev, char Cell, typename TNext>
 struct Step<InstrPtr<IPrev, ']', INext>, Tape<TPrev, Cell, TNext>> {
-    using type = std::conditional_t<Cell != 0,
-        typename Step<
-            typename ScanLeft<
-                typename StepPtrLeft<InstrPtr<IPrev, ']', INext>>::type
-            >::type,
-            Tape<TPrev, Cell, TNext>
-        >::type,
-
-        typename Step<
-            typename StepPtrRight<InstrPtr<IPrev, ']', INext>>::type,
-            Tape<TPrev, Cell, TNext>
-        >::type 
-    >;
+    using type = typename Step<
+                    typename ScanLeft<
+                        typename StepPtrLeft<InstrPtr<IPrev, ']', INext>>::type
+                    >::type,
+                    Tape<TPrev, Cell, TNext>
+                >::type;
 };
+
 
 template<typename Tape>
 struct Step<Unit, Tape> {
     using type = Unit;
 };
 
+template<typename Program>
+struct Eval {};
+
+template<char Instr, typename Rest>
+struct Eval<List<Instr, Rest>> {
+    using type = typename Step<InstrPtr<Unit, Instr, Rest>, Tape<>>::type;
+};
+
 // 33 is the first readable ascii char "!"
-using Program = InstrPtr<Unit,
-    '+',
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'+', 
-    List<'.',
-    Unit
->>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>;
+using Exclamation = typename PROG("+++++++++++++++++++++++++++++++++.");
+using res = typename Eval<Exclamation>::type;
 
 
-using res = typename Step<Program, Tape<>>::type;
+// Hello World ! 
+// https://en.wikipedia.org/wiki/Brainfuck#Hello_World!
+using HelloWorld = typename PROG("++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.");
+
+using HelloRes = typename Eval<HelloWorld>::type;
+
+int main(void) {
+    HelloWorld r;
+}
