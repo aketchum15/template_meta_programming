@@ -1,1 +1,1 @@
-gcc -o hello_world -Os -fno-exceptions -fno-rtti -s -ftemplate-depth=10000 bf.cxx 
+gcc -o out/hello_world -Os -fno-exceptions -fno-rtti -s -ftemplate-depth=10000 src/bf.cxx 
