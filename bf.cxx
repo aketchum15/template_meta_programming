@@ -1,8 +1,5 @@
 //brain fuck interpreter
-
-#include "hof.cxx"
-
-using ex = List<'.', List<'>', List<'<', Unit>>>;
+#include <unistd.h>
 
 // evil macro to turn a string literal into a list of chars
 // maxes out at 1024
@@ -17,31 +14,48 @@ using ex = List<'.', List<'>', List<'<', Unit>>>;
 #define STR512(s, n)  STR256(s,n),STR256(s,n+256)
 #define STR1024(s, n) STR512(s,n),STR512(s,n+512)
 
-#define PROG(s) Program<STR1024(s, 0)>::type
+#define PROG(s) Strip<STR1024(s, 0)>::type
+
+struct Unit {};
+
+template <char... Cs>
+struct String {
+    static const char value[sizeof...(Cs) + 1];
+};
+
+template<char... Cs>
+const char String<Cs...>::value[sizeof...(Cs) + 1] = {Cs..., '\0'};
+
+template <typename S1, typename S2>
+struct Append {};
+
+template <char... Cs, char... Ds>
+struct Append<String<Cs...>, String<Ds...>> {
+    using type = String<Cs..., Ds...>;
+};
 
 template<char... Prog>
-struct Program{};
+struct Strip{};
 
 template <char C, char... Rest>
-struct Program<C, Rest...> {
-    using type = List<C, typename Program<Rest...>::type>;
+struct Strip<C, Rest...> {
+    using type = typename Append<String<C>, typename Strip<Rest...>::type>::type;
 };
 
 template<char... Rest>
-struct Program<'\0', Rest... > {
-    using type = Unit;
+struct Strip<'\0', Rest... > {
+    using type = String<>;
 };
 
 template<>
-struct Program<'\0'> {
-    using type = Unit;
+struct Strip<'\0'> {
+    using type = String<>;
 };
-
 
 template<typename L, char Instr, typename R>
 struct InstrPtr{};
 
-template <typename L = Unit, char Cell = 0, typename R = Unit>
+template <typename L = String<>, char Cell = 0, typename R = String<>>
 struct Tape {};
 
 // Helper function for moving forward/backward through the program
@@ -50,60 +64,60 @@ struct Tape {};
 template <typename InstrPtr>
 struct StepPtrRight {};
 
-template <typename IPrev, char Instr, char NextInstr, typename INext>
-struct StepPtrRight<InstrPtr<IPrev, Instr, List<NextInstr, INext>>> {
-    using type = InstrPtr<List<Instr, IPrev>, NextInstr, INext>;
+template <char... IPrev, char Instr, char NextInstr, char ...INext>
+struct StepPtrRight<InstrPtr<String<IPrev...>, Instr, String<NextInstr, INext...>>> {
+    using type = InstrPtr<String<Instr, IPrev...>, NextInstr, String<INext...>>;
 };
 
 template<typename IPrev, char Instr> 
-struct StepPtrRight<InstrPtr<IPrev, Instr, Unit>> {
-    using type = Unit;
+struct StepPtrRight<InstrPtr<IPrev, Instr, String<>>> {
+    using type = String<>;
 };
 
 template <typename InstrPtr>
 struct StepPtrLeft {};
 
-template <typename IPrev, char PrevInstr, char Instr, typename INext>
-struct StepPtrLeft<InstrPtr<List<PrevInstr, IPrev>, Instr, INext>> {
-    using type = InstrPtr<IPrev, PrevInstr, List<Instr, INext>>;
+template <char... IPrev, char PrevInstr, char Instr, char... INext>
+struct StepPtrLeft<InstrPtr<String<PrevInstr, IPrev...>, Instr, String<INext...>>> {
+    using type = InstrPtr<String<IPrev...>, PrevInstr, String<Instr, INext...>>;
 };
 
 template <char Instr, typename INext>
-struct StepPtrLeft<InstrPtr<Unit, Instr, INext>> {
+struct StepPtrLeft<InstrPtr<String<>, Instr, INext>> {
     using type = Unit;
 };
 
 // Helper functions for moving forward/backward through the tape
-// Creates a new cell if I reached the end (Unit)
+// Creates a new cell if reached the end
 
 template<typename Tape>
 struct StepTapeRight {};
 
 // Normal case, just move to the right 
-template <typename TPrev, char Cell, char NextCell, typename TNext>
-struct StepTapeRight<Tape<TPrev, Cell, List<NextCell, TNext>>> {
-    using type = Tape<List<Cell, TPrev>, NextCell, TNext>;
+template <char... TPrev, char Cell, char NextCell, char... TNext>
+struct StepTapeRight<Tape<String<TPrev...>, Cell, String<NextCell, TNext...>>> {
+    using type = Tape<String<Cell, TPrev...>, NextCell, String<TNext...>>;
 };
 
 // End of tape, generate new cell
-template <typename TPrev, char Cell>
-struct StepTapeRight<Tape<TPrev, Cell, Unit>> {
-    using type = Tape<List<Cell, TPrev>, char{0}, Unit>;
+template <char... TPrev, char Cell>
+struct StepTapeRight<Tape<String<TPrev...>, Cell, String<>>> {
+    using type = Tape<String<Cell, TPrev...>, char{0}, String<>>;
 };
 
 template<typename Tape>
 struct StepTapeLeft{};
 
 // Normal case, just move to the right 
-template <typename TPrev, char PrevCell, char Cell, typename TNext>
-struct StepTapeLeft<Tape<List<PrevCell, TPrev>, Cell, TNext>> {
-    using type = Tape<TPrev, PrevCell, List<Cell, TNext>>;
+template <char... TPrev, char PrevCell, char Cell, char... TNext>
+struct StepTapeLeft<Tape<String<PrevCell, TPrev...>, Cell, String<TNext...>>> {
+    using type = Tape<String<TPrev...>, PrevCell, String<Cell, TNext...>>;
 };
 
 // End of tape, generate new cell
-template <char Cell, typename TNext>
-struct StepTapeLeft<Tape<Unit, Cell, TNext>> {
-    using type = Tape<Unit, char{0}, List<Cell, TNext>>;
+template <char Cell, char... TNext>
+struct StepTapeLeft<Tape<String<>, Cell, String<TNext...>>> {
+    using type = Tape<String<>, char{0}, String<Cell, TNext...>>;
 };
 
 
@@ -208,13 +222,13 @@ struct Step<InstrPtr<IPrev, '<', INext>, Tape> {
 // DOT
 template<typename IPrev, typename INext, typename TPrev, char Cell, typename TNext>
 struct Step<InstrPtr<IPrev, '.', INext>, Tape<TPrev, Cell, TNext>> {
-    using type = List<
-        Cell,
+    using type = typename Append<
+        String<Cell>,
         typename Step<
             typename StepPtrRight<InstrPtr<IPrev, '.', INext>>::type,
             Tape<TPrev, Cell, TNext>
         >::type 
-    >;
+    >::type;
 };
 
 // No , for now :(
@@ -260,16 +274,16 @@ struct Step<InstrPtr<IPrev, ']', INext>, Tape<TPrev, Cell, TNext>> {
 
 
 template<typename Tape>
-struct Step<Unit, Tape> {
-    using type = Unit;
+struct Step<String<>, Tape> {
+    using type = String<>;
 };
 
 template<typename Program>
 struct Eval {};
 
-template<char Instr, typename Rest>
-struct Eval<List<Instr, Rest>> {
-    using type = typename Step<InstrPtr<Unit, Instr, Rest>, Tape<>>::type;
+template<char Instr, char... Rest>
+struct Eval<String<Instr, Rest...>> {
+    using type = typename Step<InstrPtr<String<>, Instr, String<Rest...>>, Tape<>>::type;
 };
 
 // 33 is the first readable ascii char "!"
@@ -284,5 +298,6 @@ using HelloWorld = typename PROG("++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]
 using HelloRes = typename Eval<HelloWorld>::type;
 
 int main(void) {
-    HelloWorld r;
+    write(1, HelloRes::value, sizeof(HelloRes::value));
+    return 0;
 }
